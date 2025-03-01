@@ -3,11 +3,10 @@ import requests
 from bs4 import BeautifulSoup
 from langchain.llms import Ollama
 from langchain.chains import ConversationChain
-from langchain.vectorstores import FAISS as LangChainFAISS
 from langchain.embeddings import OllamaEmbeddings
-from langchain.memory import VectorStoreRetrieverMemory
 from langchain.vectorstores import FAISS
-from langchain.docstore import InMemoryDocstore
+from langchain.memory import VectorStoreRetrieverMemory
+from langchain.schema import Document
 import faiss
 
 # Function to extract text from a URL
@@ -28,18 +27,7 @@ ollama_model = Ollama(model="llama3.2", temperature=0.3)
 embeddings_model = OllamaEmbeddings(model="llama3.2")
 
 # Initialize FAISS VectorStore
-embedding_example = embeddings_model.embed_query("Example query to check embedding size")
-embedding_dimension = len(embedding_example)
-index = faiss.IndexFlatL2(embedding_dimension)
-docstore = InMemoryDocstore()
-index_to_docstore_id = {}
-
-vectorstore = LangChainFAISS(
-    embedding_function=embeddings_model.embed_query,
-    index=index,
-    docstore=docstore,
-    index_to_docstore_id=index_to_docstore_id
-)
+vectorstore = FAISS.from_texts(texts=[], embedding=embeddings_model)
 
 retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 memory = VectorStoreRetrieverMemory(retriever=retriever)
@@ -56,14 +44,15 @@ if url_input:
     st.info("Fetching and embedding content from the URL...")
     page_text = extract_text_from_url(url_input)
     if page_text:
-        vectorstore.add_texts([page_text], metadata=[{"source": url_input}])
+        vectorstore.add_documents([Document(page_content=page_text, metadata={"source": url_input})])
         st.success("Data successfully added to the knowledge base.")
 
 if user_input:
     st.info("Generating AI response...")
     prompt = f"Answer the following query using the knowledge from the URL data. Query: {user_input}"
     response = conversation_chain.predict(input=prompt)
-    vectorstore.add_texts([user_input, response], metadata=[{"type": "user_query"}, {"type": "ai_response"}])
+    vectorstore.add_documents([Document(page_content=user_input, metadata={"type": "user_query"})])
+    vectorstore.add_documents([Document(page_content=response, metadata={"type": "ai_response"})])
     st.write("AI Response:", response)
 
     # Display relevant past conversations
@@ -78,5 +67,5 @@ if user_input:
         st.write("No relevant conversations found.")
 
 if st.button("Clear Conversation History"):
-    vectorstore.clear()
+    vectorstore = FAISS.from_texts(texts=[], embedding=embeddings_model)  # Reset FAISS
     st.write("Conversation history cleared.")
